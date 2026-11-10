@@ -1,0 +1,67 @@
+:root {
+  --text: #222;
+  --sub: #6b6b6b;
+  --line: #dcdcdc;
+  --bg: #fafafa;
+  --accent: #1d5aa8;
+  --like: #d6336c;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif;
+  font-size: 16px;
+  line-height: 1.75;
+  -webkit-text-size-adjust: 100%;
+}
+
+button { font: inherit; }
+
+.wrap { max-width: 900px; margin: 0 auto; padding: 20px 16px 40px; }
+.center { text-align: center; }
+.muted { color: var(--sub); }
+.small { font-size: 14px; }
+.error { color: #c8102e; font-size: 14px; margin-top: 8px; }
+
+/* はじめに・終了 */
+.panel { max-width: 560px; margin: 24px auto; }
+.panel h1 { font-size: 21px; margin: 0 0 12px; }
+.panel p { margin: 0 0 1em; }
+.panel ul { padding-left: 1.2em; margin: 0 0 1.4em; }
+.panel li { margin-bottom: 0.4em; }
+
+.btn { background: #333; color: #fff; border: none; border-radius: 4px; padding: 10px 36px; cursor: pointer; font-size: 15px; }
+.btn:disabled { background: #aaa; cursor: default; }
+
+.code-box { font-size: 32px; font-weight: 700; letter-spacing: 0.18em; border: 2px solid var(--text); border-radius: 4px; padding: 12px; margin: 16px 0; background: #fff; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.waste { margin-top: 40px; }
+.waste-btn { font-size: 12px; color: var(--sub); border: 1px solid var(--line); border-radius: 3px; padding: 3px 10px; text-decoration: none; background: #fff; }
+.waste-btn:hover { color: var(--text); border-color: #999; }
+
+/* 出題 */
+.progress { text-align: center; font-size: 13px; color: var(--sub); }
+.question { text-align: center; font-size: 19px; font-weight: 700; margin: 4px 0 16px; }
+.pairgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.pairgrid.loading { visibility: hidden; }
+
+.card { display: block; width: 100%; padding: 0; margin: 0; border: 3px solid transparent; border-radius: 8px; background: #fff; cursor: pointer; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14); text-align: left; color: var(--text); transition: opacity 0.15s, border-color 0.1s; }
+.card:hover:not(:disabled) { border-color: #b9c7da; }
+.card:focus-visible { outline: 3px solid #8fb3e3; outline-offset: 2px; }
+.card.picked { border-color: var(--accent); }
+.card.dim { opacity: 0.45; }
+.card:disabled { cursor: default; }
+.card img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: #e9e9e9; user-select: none; }
+
+.likes { display: flex; align-items: center; gap: 6px; padding: 8px 12px; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.likes svg { width: 18px; height: 18px; fill: var(--like); flex: none; }
+
+@media (max-width: 520px) {
+  .wrap { padding: 14px 10px 32px; }
+  .pairgrid { gap: 8px; }
+  .question { font-size: 17px; }
+  .likes { padding: 6px 8px; font-size: 15px; }
+}
