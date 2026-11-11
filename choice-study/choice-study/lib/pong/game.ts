@@ -5,6 +5,11 @@
 //     （通信の遅れがあっても「当てたのに外れた」が起きない）
 //   ・相手側にボールが届いたら、相手からの知らせ（hit / miss）が来るまでそこで待つ
 //   ・サーブと点数は部屋を作った側（authority）が決める
+//
+// 画面の大きさ：
+//   ゲームの中はいつも 800×500 の座標で計算し、描くときだけ画面の大きさに拡大・縮小する。
+//   オンライン対戦で送るパドルの位置やボールの速さもこの座標なので、
+//   相手と画面の大きさが違っても、同じ割合の位置・同じ速さになる
 
 export const W = 800;
 export const H = 500;
@@ -18,6 +23,7 @@ const MAX_SPEED = 900;
 const KEY_SPEED = 560;
 const CPU_SPEED = [230, 350, 520];
 const CPU_ERROR = [70, 38, 12];
+export const PIXEL_FONT = '"DotGothic16", ui-monospace, monospace';
 
 export type Ctl = "keys-ws" | "keys-arrows" | "keys-both" | "cpu" | "remote";
 
@@ -74,13 +80,16 @@ export class Game {
   private remoteAgain = false;
   private lost: Snapshot["lost"] = null;
   private stopped = false;
+  private observer: ResizeObserver;
 
   constructor(private o: GameOptions) {
     this.ctx = o.canvas.getContext("2d")!;
     this.ctl = [o.left, o.right];
     this.online = o.left === "remote" || o.right === "remote";
-    o.canvas.width = W;
-    o.canvas.height = H;
+    // 画面の大きさが変わるたびに、キャンバスの解像度を合わせる（高解像度の画面でもぼやけない）
+    this.observer = new ResizeObserver(() => this.resize());
+    this.observer.observe(o.canvas);
+    this.resize();
 
     window.addEventListener("keydown", this.onKey);
     window.addEventListener("keyup", this.onKey);
@@ -101,6 +110,7 @@ export class Game {
     if (sayBye && this.online) this.o.send?.({ t: "bye" });
     cancelAnimationFrame(this.raf);
     if (this.timer) clearTimeout(this.timer);
+    this.observer.disconnect();
     window.removeEventListener("keydown", this.onKey);
     window.removeEventListener("keyup", this.onKey);
     const c = this.o.canvas;
@@ -325,6 +335,22 @@ export class Game {
 
   // ---------------------------------------------------------- 描画
 
+  private resize() {
+    const c = this.o.canvas;
+    const r = c.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const w = Math.max(1, Math.round(r.width * dpr));
+    const h = Math.max(1, Math.round(r.height * dpr));
+    if (c.width !== w || c.height !== h) {
+      c.width = w;
+      c.height = h;
+    }
+    // 以降は 800×500 の座標で描けば、画面いっぱいに拡大される
+    this.ctx.setTransform(w / W, 0, 0, h / H, 0, 0);
+    this.ctx.imageSmoothingEnabled = false;
+    if (this.stopped === false && this.last) this.draw();
+  }
+
   private draw() {
     const g = this.ctx;
     g.fillStyle = "#111";
@@ -340,14 +366,14 @@ export class Game {
     g.setLineDash([]);
 
     g.fillStyle = "#555";
-    g.font = "bold 72px ui-monospace, Menlo, Consolas, monospace";
+    g.font = `80px ${PIXEL_FONT}`;
     g.textAlign = "center";
     g.textBaseline = "top";
     g.fillText(String(this.score[0]), W / 2 - 90, 24);
     g.fillText(String(this.score[1]), W / 2 + 90, 24);
 
     g.fillStyle = "#777";
-    g.font = "16px sans-serif";
+    g.font = `20px ${PIXEL_FONT}`;
     g.textBaseline = "bottom";
     g.fillText(this.o.labels[0], W / 4, H - 10);
     g.fillText(this.o.labels[1], (W * 3) / 4, H - 10);
@@ -356,10 +382,9 @@ export class Game {
     g.fillRect(PAD_X, this.pad[0] - PAD_H / 2, PAD_W, PAD_H);
     g.fillRect(W - PAD_X - PAD_W, this.pad[1] - PAD_H / 2, PAD_W, PAD_H);
 
+    // ボールは昔のゲームと同じ四角
     if (this.phase === "play" || this.phase === "hold") {
-      g.beginPath();
-      g.arc(this.ball.x, this.ball.y, BALL_R, 0, Math.PI * 2);
-      g.fill();
+      g.fillRect(this.ball.x - BALL_R, this.ball.y - BALL_R, BALL_R * 2, BALL_R * 2);
     }
   }
 

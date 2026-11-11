@@ -55,4 +55,4 @@ export const WEIGHTS: Record<Cond, number> = { none: 1, X: 1, Y: 1 };
 // これより速い回答（ミリ秒）は「速すぎ」としてCSVに印を付ける
 export const TOO_FAST_MS = 400;
 
-export const QUESTION = "どちらの画像がよいと思いますか？";
+export const QUESTION = "どちらの投稿に「いいね」しますか？";

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Game, WIN_SCORE, type Ctl, type Snapshot } from "@/lib/pong/game";
 import { connect, hostRoom, joinRoom, newRoomCode, quickMatch, type Session, type Transport } from "@/lib/pong/net";
+// レトロ風のピクセルフォント（DotGothic16、SIL Open Font License）。サーバーに同梱して配信する
+import "@fontsource/dotgothic16/400.css";
 import "./pong.css";
 
 type Config = {
@@ -193,6 +195,8 @@ function GameView({ config, onExit }: { config: Config; onExit: () => void }) {
   const [snap, setSnap] = useState<Snapshot | null>(null);
 
   useEffect(() => {
+    // キャンバスに描く文字のために、フォントを先に読み込んでおく
+    document.fonts?.load(`20px "DotGothic16"`, "0123456789あなたいてCPUよわふつう").catch(() => {});
     const chan = config.session?.chan;
     const g = new Game({
       canvas: canvas.current!,
