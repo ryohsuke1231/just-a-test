@@ -28,19 +28,56 @@ type Screen =
   | { name: "waiting"; text: string; code?: string }
   | { name: "game"; config: Config };
 
+// メニュー以外の画面（CPUの強さ・オンライン・待ち・ゲーム）にいるときは、URLの末尾に #play を付ける。
+// こうすると、ブラウザやAndroidの「戻る」でメニューに戻れる（アンケートのページまで戻らない）
+const PLAY_HASH = "#play";
+const isSub = (s: Screen) => s.name === "cpu" || s.name === "online" || s.name === "waiting" || s.name === "game";
+
 export default function PongPage() {
-  const [screen, setScreen] = useState<Screen>({ name: "checking" });
+  const [screen, setScreenRaw] = useState<Screen>({ name: "checking" });
   const [notice, setNotice] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const transport = useRef<Transport | null>(null);
   const cancelWait = useRef<(() => void) | null>(null);
+  // 待っている途中で「とりけし」や「戻る」をしたら番号を進める。古い番号の結果は無視する
+  const gen = useRef(0);
+
+  const stopWaiting = useCallback(() => {
+    gen.current += 1;
+    cancelWait.current?.();
+    cancelWait.current = null;
+  }, []);
+
+  const setScreen = useCallback((s: Screen) => {
+    if (isSub(s) && location.hash !== PLAY_HASH) location.hash = PLAY_HASH;
+    setScreenRaw(s);
+  }, []);
+
+  // アプリ内の「もどる」「やめる」「メニューへ」：#play の履歴を1つ戻す（戻ったあとの処理は hashchange で行う）
+  const toMenu = useCallback(() => {
+    stopWaiting();
+    if (location.hash === PLAY_HASH) history.back();
+    else setScreenRaw({ name: "menu" });
+  }, [stopWaiting]);
+
+  useEffect(() => {
+    const onHash = () => {
+      if (location.hash === PLAY_HASH) return;
+      stopWaiting();
+      setScreenRaw((s) => (isSub(s) ? { name: "menu" } : s));
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, [stopWaiting]);
 
   // 回答を終えた人だけ遊べる
   useEffect(() => {
+    // 読み込み直したときに #play が残っていたら消しておく（履歴は増やさない）
+    if (location.hash === PLAY_HASH) history.replaceState(history.state, "", location.pathname + location.search);
     fetch("/api/state", { cache: "no-store" })
       .then((r) => r.json())
-      .then((s) => setScreen(s.done ? { name: "menu" } : { name: "locked" }))
-      .catch(() => setScreen({ name: "locked" }));
+      .then((s) => setScreenRaw(s?.status === "done" ? { name: "menu" } : { name: "locked" }))
+      .catch(() => setScreenRaw({ name: "locked" }));
     return () => {
       cancelWait.current?.();
       transport.current?.close();
@@ -54,7 +91,8 @@ export default function PongPage() {
     return transport.current;
   };
 
-  const startOnline = (s: Session) => {
+  const startOnline = (s: Session, myGen: number) => {
+    if (myGen !== gen.current) { s.chan.close(); return; } // もう取り消されていた
     cancelWait.current = null;
     setScreen({
       name: "game",
@@ -71,29 +109,42 @@ export default function PongPage() {
   };
 
   const online = async (action: "quick" | "create" | "join") => {
+    stopWaiting();
+    const myGen = gen.current;
+    const stale = () => myGen !== gen.current;
     setNotice("");
     setScreen({ name: "waiting", text: "接続しています…" });
     let tp: Transport;
     try {
       tp = await getTransport();
     } catch {
+      if (stale()) return;
       setNotice("オンライン対戦に接続できませんでした。時間をおいて試してください。");
       setScreen({ name: "online" });
       return;
     }
+    if (stale()) return;
     try {
+      const ready = (s: Session) => startOnline(s, myGen);
+      let cancelFn: (() => void) | null = null;
       if (action === "quick") {
         setScreen({ name: "waiting", text: "対戦相手をさがしています…" });
-        cancelWait.current = await quickMatch(tp, startOnline);
+        cancelFn = await quickMatch(tp, ready);
       } else if (action === "create") {
         const code = newRoomCode();
         setScreen({ name: "waiting", text: "この番号を相手に伝えてください", code });
-        cancelWait.current = await hostRoom(tp, code, startOnline);
+        cancelFn = await hostRoom(tp, code, ready);
       } else {
         setScreen({ name: "waiting", text: "部屋に入っています…" });
-        startOnline(await joinRoom(tp, joinCode));
+        ready(await joinRoom(tp, joinCode));
+      }
+      // 準備している間に取り消されていたら、ここで止める
+      if (cancelFn) {
+        if (stale()) cancelFn();
+        else cancelWait.current = cancelFn;
       }
     } catch (e) {
+      if (stale()) return;
       const m = (e as Error).message;
       setNotice(m === "full" ? "その部屋はもう対戦中です。" : m === "notfound" ? "部屋が見つかりませんでした。番号を確認してください。" : "うまくつながりませんでした。もう一度試してください。");
       setScreen({ name: "online" });
@@ -101,12 +152,9 @@ export default function PongPage() {
   };
 
   const cancel = () => {
-    cancelWait.current?.();
-    cancelWait.current = null;
+    stopWaiting();
     setScreen({ name: "online" });
   };
-
-  const toMenu = useCallback(() => setScreen({ name: "menu" }), []);
 
   return (
     <div className="pong">
@@ -193,6 +241,27 @@ function GameView({ config, onExit }: { config: Config; onExit: () => void }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const game = useRef<Game | null>(null);
   const [snap, setSnap] = useState<Snapshot | null>(null);
+  const [away, setAway] = useState(false);
+
+  // オンライン対戦中に別のタブやアプリへ移ると、画面が止まって相手も待たされる。
+  // 3秒以上離れたら、対戦を終えて相手に知らせる
+  useEffect(() => {
+    if (config.mode !== "online") return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onVis = () => {
+      if (document.hidden) {
+        timer = setTimeout(() => { game.current?.destroy(); setAway(true); }, 3000);
+      } else if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      if (timer) clearTimeout(timer);
+    };
+  }, [config.mode]);
 
   useEffect(() => {
     // キャンバスに描く文字のために、フォントを先に読み込んでおく
@@ -233,8 +302,15 @@ function GameView({ config, onExit }: { config: Config; onExit: () => void }) {
     <div className="pong-game">
       <div className="pong-stage">
         <canvas ref={canvas} />
-        {snap?.phase === "ready" && <div className="pong-overlay"><p className="pong-big">よーい…</p></div>}
-        {snap?.phase === "over" && (
+        {snap?.phase === "ready" && !away && <div className="pong-overlay"><p className="pong-big">よーい…</p></div>}
+        {away && (
+          <div className="pong-overlay">
+            <p className="pong-big">対戦を終了しました</p>
+            <p className="pong-msg">画面を離れたため、対戦を終了しました</p>
+            <button className="pong-btn ghost" onClick={onExit}>メニューへ</button>
+          </div>
+        )}
+        {snap?.phase === "over" && !away && (
           <div className="pong-overlay">
             <p className="pong-big">{result}</p>
             <p className="pong-score">{snap.score[0]} - {snap.score[1]}</p>
@@ -255,7 +331,7 @@ function GameView({ config, onExit }: { config: Config; onExit: () => void }) {
             ? "左：W / S キー（タッチは画面の左半分）　右：↑ / ↓ キー（タッチは右半分）"
             : "操作：↑ / ↓ キー、W / S キー、マウス、タッチ"}
         </span>
-        {snap?.phase !== "over" && <button className="pong-link" onClick={onExit}>やめる</button>}
+        {snap?.phase !== "over" && !away && <button className="pong-link" onClick={onExit}>やめる</button>}
       </div>
     </div>
   );

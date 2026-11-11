@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
 import { Rest } from "ably";
 import { randomUUID } from "crypto";
-import { currentParticipant } from "@/lib/view";
+import { handle, readSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 // Pongのオンライン対戦用に、期限つきの許可（トークン）を発行する。
 // APIキーそのものは環境変数 ABLY_API_KEY に置き、ブラウザには渡さない。
-export async function GET() {
+export const GET = handle(async () => {
   const key = process.env.ABLY_API_KEY;
   if (!key) return NextResponse.json({ error: "online play is not configured" }, { status: 503 });
 
-  // 回答を終えた人だけ
-  const p = await currentParticipant();
-  if (!p?.done) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  // 回答を終えた人だけ（署名付きの完了cookieでも判定する）
+  const { p, fin } = await readSession();
+  if (!p?.done && !fin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const rest = new Rest({ key });
   const tokenRequest = await rest.auth.createTokenRequest({
@@ -22,4 +22,4 @@ export async function GET() {
     ttl: 60 * 60 * 1000,
   });
   return NextResponse.json(tokenRequest, { headers: { "Cache-Control": "no-store" } });
-}
+});

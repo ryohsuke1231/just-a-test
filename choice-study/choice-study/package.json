@@ -4,7 +4,6 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "prebuild": "node scripts/fetch-photos.mjs",
     "build": "next build",
     "start": "next start"
   },

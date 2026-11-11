@@ -1,8 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { SITE_NAME } from "@/content/articles";
 
 export const metadata: Metadata = {
-  title: "画像アンケート",
+  title: SITE_NAME,
   robots: { index: false, follow: false }, // 検索エンジンに載せない
 };
 
